@@ -1,0 +1,216 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#123c2b">
+  <title>Member Login | Unique Elite Club</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      font-family: Arial, sans-serif;
+      background: #f5f3eb;
+      color: #183c2b;
+    }
+    .card {
+      max-width: 440px;
+      margin: 25px auto;
+      padding: 25px;
+      background: white;
+      border-radius: 18px;
+      box-shadow: 0 8px 28px #00000012;
+    }
+    h1 { text-align: center; color: #174b34; }
+    .gold { color: #b68a28; text-align: center; }
+    label {
+      display: block;
+      margin-top: 16px;
+      font-weight: bold;
+    }
+    input {
+      width: 100%;
+      padding: 13px;
+      margin-top: 7px;
+      border: 1px solid #c8d2ca;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 8px;
+      background: #174b34;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    button.secondary { background: #b68a28; color: #172d20; }
+    #message {
+      margin-top: 18px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+    a { color: #174b34; }
+    .back { text-align: center; margin-top: 22px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Unique Elite Club</h1>
+    <p class="gold"><strong>Unique! Togetherness We Rise!</strong></p>
+
+    <h2>Member Login</h2>
+    <p>Log in using the email address and password for your account.</p>
+
+    <form id="loginForm">
+      <label for="loginEmail">Email address</label>
+      <input id="loginEmail" type="email"
+        autocomplete="email" required>
+
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password"
+        autocomplete="current-password" required>
+
+      <button type="submit">Member Login</button>
+    </form>
+
+    <hr style="margin-top:24px;">
+
+    <h2>New Member Registration</h2>
+    <p>Register your details below. Your membership will remain pending until an administrator approves it.</p>
+
+    <form id="signupForm">
+      <label for="fullName">Full name</label>
+      <input id="fullName" type="text"
+        autocomplete="name" maxlength="150" required>
+
+      <label for="phone">Phone number</label>
+      <input id="phone" type="tel"
+        autocomplete="tel" maxlength="30" required>
+
+      <label for="signupEmail">Email address</label>
+      <input id="signupEmail" type="email"
+        autocomplete="email" required>
+
+      <label for="signupPassword">Create password</label>
+      <input id="signupPassword" type="password"
+        autocomplete="new-password" minlength="8" required>
+      <small>Use at least 8 characters.</small>
+
+      <button class="secondary" type="submit">
+        Register for Membership
+      </button>
+    </form>
+
+    <p id="message" role="status" aria-live="polite"></p>
+    <p class="back"><a href="index.html">Back to homepage</a></p>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const client = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+
+    const message = document.getElementById("message");
+    const loginForm = document.getElementById("loginForm");
+    const signupForm = document.getElementById("signupForm");
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    async function linkApprovedApplication() {
+      const { data, error } = await client.rpc("claim_member_account");
+
+      if (error) throw error;
+      if (data !== true) {
+        throw new Error("Membership is not approved or could not be linked.");
+      }
+    }
+
+    loginForm.addEventListener("submit", async function(event) {
+      event.preventDefault();
+      showMessage("Signing in...");
+
+      const email = document.getElementById("loginEmail").value.trim();
+      const password = document.getElementById("loginPassword").value;
+
+      const { error } = await client.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        showMessage("Login failed: " + error.message);
+        return;
+      }
+
+      try {
+        await linkApprovedApplication();
+        showMessage(
+          "Login successful. Your approved membership is linked. " +
+          "Your member area will be available when its access settings are ready."
+        );
+      } catch (error) {
+        showMessage(
+          "You are signed in, but membership access is not confirmed. " +
+          "If you registered recently, please wait for administrator approval. " +
+          "If you have already been approved, contact the club administrator."
+        );
+      }
+    });
+
+    signupForm.addEventListener("submit", async function(event) {
+      event.preventDefault();
+      showMessage("Submitting your registration...");
+
+      const fullName = document.getElementById("fullName").value.trim();
+      const phone = document.getElementById("phone").value.trim();
+      const email = document.getElementById("signupEmail").value.trim();
+      const password = document.getElementById("signupPassword").value;
+
+      if (!fullName || !phone || !email || !password) {
+        showMessage("Please complete all registration fields.");
+        return;
+      }
+
+      const { data, error } = await client.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.href.split("?")[0],
+          data: {
+            full_name: fullName,
+            phone: phone
+          }
+        }
+      });
+
+      if (error) {
+        showMessage("Registration failed: " + error.message);
+        return;
+      }
+
+      if (data.session) {
+        showMessage(
+          "Registration submitted successfully. Your membership is pending " +
+          "administrator approval. Please wait for the club administrator."
+        );
+      } else {
+        showMessage(
+          "Registration submitted. Please check your email for a confirmation " +
+          "link if required. Your membership is pending administrator approval."
+        );
+      }
+    });
+  </script>
+</body>
+</html>
