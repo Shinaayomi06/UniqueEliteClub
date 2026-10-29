@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#123c2b">
+  <title>Unique Elite Club | Admin Login</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f5f3e9;
+      color: #173d2c;
+    }
+    header {
+      background: #123c2b;
+      color: #f1d58a;
+      text-align: center;
+      padding: 25px 15px;
+    }
+    main { max-width: 850px; margin: 25px auto; padding: 15px; }
+    .panel {
+      background: white;
+      padding: 22px;
+      border-radius: 14px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 18px #0000000d;
+    }
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 7px;
+      font-size: 16px;
+    }
+    input { border: 1px solid #c8d1ca; }
+    button {
+      border: 0;
+      background: #176342;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button.reject { background: #9b302c; }
+    button.secondary { background: #80631c; }
+    .hidden { display: none; }
+    .status { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .application {
+      border: 1px solid #e0e5df;
+      padding: 15px;
+      margin: 12px 0;
+      border-radius: 9px;
+      overflow-wrap: anywhere;
+    }
+    a { color: #176342; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Unique Elite Club</h1>
+    <p>Unique! Togetherness We Rise!</p>
+  </header>
+
+  <main>
+    <section class="panel" id="loginPanel">
+      <h2>Administrator Login</h2>
+      <form id="loginForm">
+        <input id="email" type="email" placeholder="Administrator email"
+          autocomplete="username" required>
+        <input id="password" type="password" placeholder="Password"
+          autocomplete="current-password" required>
+        <button id="loginButton" type="submit">Sign In</button>
+      </form>
+      <p class="status" id="loginMessage" role="status"></p>
+      <p><a href="index.html">Return to homepage</a></p>
+    </section>
+
+    <section class="panel hidden" id="dashboard">
+      <h2>Membership Applications</h2>
+      <p id="welcome"></p>
+      <button id="refreshButton" type="button">Refresh Applications</button>
+      <button id="logoutButton" class="secondary" type="button">Sign Out</button>
+      <p class="status" id="dashboardMessage" role="status"></p>
+      <div id="applications"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script>
+    const loginPanel = document.getElementById("loginPanel");
+    const dashboard = document.getElementById("dashboard");
+    const loginMessage = document.getElementById("loginMessage");
+    const dashboardMessage = document.getElementById("dashboardMessage");
+    const applications = document.getElementById("applications");
+    const loginButton = document.getElementById("loginButton");
+
+    let client = null;
+
+    try {
+      if (!window.supabase || typeof SUPABASE_URL === "undefined" ||
+          typeof SUPABASE_PUBLISHABLE_KEY === "undefined") {
+        throw new Error("Configuration not found. Check config.js.");
+      }
+
+      client = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY
+      );
+    } catch (error) {
+      loginMessage.textContent = error.message;
+    }
+
+    document.getElementById("loginForm").addEventListener("submit",
+      async function(event) {
+        event.preventDefault();
+        if (!client) return;
+
+        loginButton.disabled = true;
+        loginMessage.textContent = "Signing in...";
+
+        try {
+          const { data, error } = await client.auth.signInWithPassword({
+            email: document.getElementById("email").value.trim(),
+            password: document.getElementById("password").value
+          });
+
+          if (error) throw error;
+
+          const { data: isAdmin, error: adminError } =
+            await client.rpc("is_club_admin");
+
+          if (adminError) throw adminError;
+
+          if (isAdmin !== true) {
+            await client.auth.signOut();
+            throw new Error("This account is not authorised as an administrator.");
+          }
+
+          loginPanel.classList.add("hidden");
+          dashboard.classList.remove("hidden");
+          document.getElementById("welcome").textContent =
+            "Signed in as " + data.user.email;
+
+          await loadApplications();
+        } catch (error) {
+          loginMessage.textContent = "Login failed: " + error.message;
+        } finally {
+          loginButton.disabled = false;
+        }
+      }
+    );
+
+    async function loadApplications() {
+      applications.replaceChildren();
+      dashboardMessage.textContent = "Loading applications...";
+
+      const { data, error } = await client
+        .from("membership_applications")
+        .select("id, full_name, phone, email, occupation, address, reason_for_joining, status, membership_number, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        dashboardMessage.textContent =
+          "Could not load applications: " + error.message;
+        return;
+      }
+
+      dashboardMessage.textContent = data.length + " application(s) found.";
+
+      if (data.length === 0) {
+        applications.textContent = "No applications yet.";
+        return;
+      }
+
+      data.forEach(function(item) {
+        const card = document.createElement("article");
+        card.className = "application";
+
+        const heading = document.createElement("h3");
+        heading.textContent = item.full_name || "Unnamed applicant";
+        card.appendChild(heading);
+
+        [
+          ["Email", item.email],
+          ["Phone", item.phone],
+          ["Occupation", item.occupation],
+          ["Address", item.address],
+          ["Reason for joining", item.reason_for_joining],
+          ["Status", item.status],
+          ["Membership number", item.membership_number]
+        ].forEach(function(detail) {
+          if (detail[1]) {
+            const p = document.createElement("p");
+            p.textContent = detail[0] + ": " + detail[1];
+            card.appendChild(p);
+          }
+        });
+
+        if (item.status === "pending") {
+          const approve = document.createElement("button");
+          approve.textContent = "Approve Application";
+          approve.addEventListener("click", function() {
+            updateApplication(item.id, "approved");
+          });
+          card.appendChild(approve);
+
+          const reject = document.createElement("button");
+          reject.textContent = "Reject Application";
+          reject.className = "reject";
+          reject.addEventListener("click", function() {
+            updateApplication(item.id, "rejected");
+          });
+          card.appendChild(reject);
+        }
+
+        applications.appendChild(card);
+      });
+    }
+
+    async function updateApplication(id, status) {
+      if (!confirm("Are you sure you want to " + status + " this application?")) {
+        return;
+      }
+
+      dashboardMessage.textContent = "Updating application...";
+
+      const { error } = await client
+        .from("membership_applications")
+        .update({ status: status })
+        .eq("id", id);
+
+      if (error) {
+        dashboardMessage.textContent = "Update failed: " + error.message;
+        return;
+      }
+
+      dashboardMessage.textContent = "Application " + status + ".";
+      await loadApplications();
+    }
+
+    document.getElementById("refreshButton").addEventListener("click",
+      loadApplications);
+
+    document.getElementById("logoutButton").addEventListener("click",
+      async function() {
+        await client.auth.signOut();
+        dashboard.classList.add("hidden");
+        loginPanel.classList.remove("hidden");
+        applications.replaceChildren();
+        loginMessage.textContent = "You have signed out.";
+        document.getElementById("password").value = "";
+      });
+  </script>
+</body>
+</html>
