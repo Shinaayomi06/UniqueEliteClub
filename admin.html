@@ -1,0 +1,366 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#123c2b">
+  <title>Club Admin | Unique Elite Club</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f3f6f4; color: #183426;
+    }
+    header, main { max-width: 900px; margin: 0 auto 20px; }
+    header {
+      background: #123c2b; color: white;
+      padding: 24px; border-radius: 14px;
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h2 { font-size: 20px; }
+    .panel {
+      background: white; padding: 20px;
+      border-radius: 12px; margin-bottom: 18px;
+      box-shadow: 0 2px 8px #0000000b;
+    }
+    input, button {
+      width: 100%; padding: 12px; margin: 7px 0;
+      border-radius: 8px; font-size: 16px;
+    }
+    input { border: 1px solid #bdc9c0; }
+    button {
+      border: 0; background: #176641; color: white;
+      font-weight: bold; cursor: pointer;
+    }
+    button:disabled { opacity: .5; cursor: wait; }
+    .reject { background: #a52b2b; }
+    .secondary { background: #52675b; }
+    .application {
+      border: 1px solid #dce5de; border-radius: 10px;
+      padding: 15px; margin: 12px 0; overflow-wrap: anywhere;
+    }
+    .muted { color: #637268; font-size: 14px; }
+    #message { white-space: pre-wrap; overflow-wrap: anywhere; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Unique Elite Club</h1>
+    <div>Administrator Dashboard</div>
+  </header>
+
+  <main>
+    <section id="loginPanel" class="panel">
+      <h2>Admin Login</h2>
+      <p>Enter your registered club administrator email.</p>
+      <form id="loginForm">
+        <input id="email" type="email"
+          placeholder="Admin email address" required>
+        <button id="loginButton" type="submit">
+          Send Login Link
+        </button>
+      </form>
+      <p class="muted">
+        A secure sign-in link will be sent to your email.
+      </p>
+    </section>
+
+    <section id="dashboard" class="panel" hidden>
+      <p id="adminEmail"></p>
+      <button id="refreshButton" type="button">
+        Refresh Applications
+      </button>
+      <button id="logoutButton" class="secondary" type="button">
+        Sign Out
+      </button>
+      <h2>Membership Applications</h2>
+      <div id="applications"></div>
+    </section>
+
+    <section class="panel">
+      <p id="message" role="status" aria-live="polite">
+        Loading admin page…
+      </p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    // Correct Supabase project configuration
+    const SUPABASE_URL =
+      "https://evvswpswvpnduztrtzsj.supabase.co";
+
+    const SUPABASE_PUBLISHABLE_KEY =
+      "sb_publishable_4SYXy63g8QKKLB3ImtpUnw_dJEsyI3I";
+
+    const client = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+
+    const $ = id => document.getElementById(id);
+    let busy = false;
+
+    function message(text) {
+      $("message").textContent = text;
+    }
+
+    function element(tag, text, className) {
+      const node = document.createElement(tag);
+      node.textContent = text ?? "";
+      if (className) node.className = className;
+      return node;
+    }
+
+    function field(label, value) {
+      const p = document.createElement("p");
+      p.append(
+        element("strong", label + ": "),
+        document.createTextNode(value || "Not provided")
+      );
+      return p;
+    }
+
+    function showLogin() {
+      $("loginPanel").hidden = false;
+      $("dashboard").hidden = true;
+    }
+
+    function showDashboard(email) {
+      $("loginPanel").hidden = true;
+      $("dashboard").hidden = false;
+      $("adminEmail").textContent = "Signed in: " + email;
+    }
+
+    async function checkAdmin() {
+      const { data: sessionData, error: sessionError } =
+        await client.auth.getSession();
+
+      if (sessionError) throw sessionError;
+
+      const session = sessionData.session;
+
+      if (!session) {
+        showLogin();
+        message("Please sign in with your administrator email.");
+        return false;
+      }
+
+      const { data: allowed, error } =
+        await client.rpc("is_club_admin");
+
+      if (error) throw error;
+
+      if (allowed !== true) {
+        await client.auth.signOut();
+        showLogin();
+        message("This account is not recognized as a club administrator.");
+        return false;
+      }
+
+      showDashboard(session.user.email || "");
+      return true;
+    }
+
+    $("loginForm").addEventListener("submit", async event => {
+      event.preventDefault();
+
+      const email = $("email").value.trim();
+      const button = $("loginButton");
+
+      button.disabled = true;
+      message("Sending secure login link…");
+
+      try {
+        const { error } = await client.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo:"https://uniqueelite.vercel.app/admin.html",
+            shouldCreateUser: false
+          }
+        });
+
+        if (error) throw error;
+
+        message(
+          "Request accepted. Check your inbox and Spam folder for the login link."
+        );
+      } catch (error) {
+        message("Login link could not be sent: " + error.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function makeApplication(app) {
+      const card = element("article", null, "application");
+
+      card.append(
+        element("h3", app.full_name || "Unnamed applicant"),
+        field("Email", app.email),
+        field("Phone", app.phone),
+        field("Occupation", app.occupation),
+        field("Address", app.address),
+        field("Reason for joining", app.reason_for_joining),
+        field("Status", app.status),
+        field(
+          "Submitted",
+          app.created_at
+            ? new Date(app.created_at).toLocaleString()
+            : ""
+        ),
+        field("Membership number", app.membership_number)
+      );
+
+      if (app.status === "pending") {
+        const number = document.createElement("input");
+        number.type = "text";
+        number.placeholder = "Enter membership number";
+        number.maxLength = 40;
+        number.setAttribute(
+          "aria-label",
+          "Membership number for " + (app.full_name || "applicant")
+        );
+        card.append(number);
+
+        const approve = element("button", "Approve Application");
+        approve.addEventListener("click", async () => {
+          const membershipNumber = number.value.trim();
+
+          if (!membershipNumber) {
+            message("Enter a membership number before approving.");
+            number.focus();
+            return;
+          }
+
+          if (!confirm(
+            "Approve " + app.full_name +
+            " with membership number " + membershipNumber + "?"
+          )) return;
+
+          await updateApplication(app.id, {
+            status: "approved",
+            membership_number: membershipNumber
+          });
+        });
+
+        const reject = element(
+          "button", "Reject Application", "reject"
+        );
+        reject.addEventListener("click", async () => {
+          if (!confirm("Reject this membership application?")) return;
+          await updateApplication(app.id, { status: "rejected" });
+        });
+
+        card.append(approve, reject);
+      }
+
+      return card;
+    }
+
+    async function loadApplications() {
+      if (busy) return;
+
+      busy = true;
+      $("refreshButton").disabled = true;
+      $("applications").replaceChildren();
+      message("Loading applications…");
+
+      try {
+        const { data, error } = await client
+          .from("membership_applications")
+          .select(
+            "id,full_name,phone,email,occupation,address," +
+            "reason_for_joining,status,membership_number,created_at"
+          )
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        if (!data.length) {
+          $("applications").append(
+            element("p", "No applications found.")
+          );
+        } else {
+          data.forEach(app => {
+            $("applications").append(makeApplication(app));
+          });
+        }
+
+        message("Loaded " + data.length + " application(s).");
+      } catch (error) {
+        message("Could not load applications: " + error.message);
+      } finally {
+        busy = false;
+        $("refreshButton").disabled = false;
+      }
+    }
+
+    async function updateApplication(id, changes) {
+      message("Saving application…");
+
+      try {
+        const { data, error } = await client
+          .from("membership_applications")
+          .update(changes)
+          .eq("id", id)
+          .select("id");
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          throw new Error(
+            "No application was updated. Check admin permissions."
+          );
+        }
+
+        message("Application updated successfully.");
+        await loadApplications();
+      } catch (error) {
+        message("Update failed: " + error.message);
+      }
+    }
+
+    $("refreshButton").addEventListener("click", loadApplications);
+
+    $("logoutButton").addEventListener("click", async () => {
+      const { error } = await client.auth.signOut();
+
+      if (error) {
+        message("Sign-out failed: " + error.message);
+        return;
+      }
+
+      showLogin();
+      message("You have signed out.");
+    });
+
+    client.auth.onAuthStateChange(event => {
+      if (event === "SIGNED_OUT") showLogin();
+    });
+
+    async function start() {
+      try {
+        if (
+          SUPABASE_URL.includes("PASTE_YOUR") ||
+          SUPABASE_PUBLISHABLE_KEY.includes("PASTE_YOUR")
+        ) {
+          showLogin();
+          message("Setup required: check the Supabase URL and publishable key.");
+          return;
+        }
+
+        if (await checkAdmin()) await loadApplications();
+      } catch (error) {
+        showLogin();
+        message("Admin setup error: " + error.message);
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>
